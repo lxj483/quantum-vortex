@@ -1,0 +1,157 @@
+import numpy as np
+from sklearn.cluster import DBSCAN
+import cv2
+import glob
+
+
+
+def local_contrast(img, window_size=10):
+    """计算局部对比度"""
+    img=img.astype(np.float32)
+    min_img=cv2.erode(img,np.ones((window_size,window_size)))
+    max_img=cv2.dilate(img,np.ones((window_size,window_size)))
+    img=255*(img-min_img)/(max_img-min_img+1e-5)
+    # img=img.astype(np.uint8)
+    # cv2.imshow('img',img)
+    # cv2.waitKey(0)
+    # cv2.destroyAllWindows()
+    return img
+
+
+def build_gaussian_pyramid(image, num_octaves=4, scales_per_octave=5, sigma=1.6):
+    """构建高斯金字塔"""
+    pyramid = []
+    k = 2 ** (1.0 / scales_per_octave)  # 尺度倍增系数
+    
+    for octave in range(num_octaves):
+        octave_images = []
+        sigma_total = sigma
+        # local_contrast_image=local_contrast(image,window_size=int(sigma_total*6))
+        for s in range(scales_per_octave + 3):  # 每octave多生成3幅用于极值检测
+            if  s == 0:
+                octave_images.append(image.astype(np.float32))
+            else:
+                sigma_effective = sigma_total * np.sqrt(k**2 - 1)
+                blurred = cv2.GaussianBlur(octave_images[-1], (0, 0), sigmaX=sigma_effective)
+                octave_images.append(blurred)
+            sigma_total *= k
+        pyramid.append(octave_images)
+        
+        # 下采样准备下一octave
+        if octave < num_octaves - 1:
+            image = cv2.resize(octave_images[-3], 
+                             (octave_images[-3].shape[1]//2, octave_images[-3].shape[0]//2),
+                             interpolation=cv2.INTER_NEAREST)
+    return pyramid
+
+def build_dog_pyramid(gaussian_pyramid,scales_per_octave=5,sigma=1.6):
+    """构建高斯差分金字塔"""
+    k=2**(1.0/scales_per_octave)
+    dog_pyramid = []
+    for octave in gaussian_pyramid:
+        dog_octave = []
+        sigma_total=sigma*k
+        for i in range(1, len(octave)):
+            dog = octave[i] - octave[i-1]
+            dog_octave.append(dog)
+            sigma_total*=k
+        dog_pyramid.append(dog_octave)
+    return dog_pyramid
+
+
+
+# 在detect_vortices_by_convolution中替换create_vortex_kernel调用为：
+def detect_vortices_by_convolution(image_path, min_radius=20, max_radius=50,color_threshold=0.5,split=0.7,more_precise=7,inverse=False):
+    image = cv2.imread(image_path)
+    if image is None:
+        print("Error: unable to load image.")
+        return
+    if inverse:
+        threshold=0.4
+    else:
+        threshold=0.62
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY).astype(np.float32)
+    # clahe=cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+    # gray=clahe.apply(gray).astype(np.float32)
+    # gray=local_contrast(gray,window_size=15)
+    cv2.imshow('img',gray.astype(np.uint8))
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
+    
+    # 构建金字塔
+    num_octave=int(round(np.log(min(gray.shape)) / np.log(2) - 1))
+    gaussian_pyramid = build_gaussian_pyramid(gray, num_octaves=num_octave,scales_per_octave=3,sigma=1.6)
+    dog_pyramid = build_dog_pyramid(gaussian_pyramid)
+    
+    # 在多尺度上检测涡旋
+    vortices = []
+    for octave_idx, dog_octave in enumerate(dog_pyramid):
+        scale = 2 ** octave_idx  # 当前octave的尺度因子
+        for layer_idx, dog in enumerate(dog_octave):
+            # 归一化并二值化
+            norm_dog = cv2.normalize(dog, None, 0,255, cv2.NORM_MINMAX).astype(np.uint8)
+            if inverse:
+                _, binary = cv2.threshold(norm_dog,0,255, cv2.THRESH_BINARY_INV+cv2.THRESH_OTSU)
+            else:
+                _, binary = cv2.threshold(norm_dog,threshold*255,255, cv2.THRESH_BINARY)
+            # kernel = np.ones((5,5),np.uint8)
+            # opening = cv2.morphologyEx(binary,cv2.MORPH_OPEN,kernel, iterations = 2)
+            # dist_transform = cv2.distanceTransform(binary,cv2.DIST_L2,5)
+            # ret, binary = cv2.threshold(dist_transform,0.3*dist_transform.max(),255,0)
+            # cv2.imshow("dog",binary)
+            # cv2.waitKey(0) 
+            # cv2.destroyAllWindows()
+            binary = binary.astype(np.uint8)
+            
+            # 寻找连通区域
+            contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            for contour in contours:
+                (x, y), radius = cv2.minEnclosingCircle(contour)
+                if radius<1:
+                    continue
+                region=norm_dog[int(max(x-radius,0)):int(min(x+radius,norm_dog.shape[1])), int(max(y-radius,0)):int(min(y+radius,norm_dog.shape[0]))]
+                sig = np.max(region)
+                x, y, radius = int(x*scale), int(y*scale), int(radius*scale)
+                if inverse:
+                    if min_radius < radius < max_radius and gray[y,x]>(np.max(gray)-np.min(gray))*(1-color_threshold):  # 过滤不合理的大小
+                        # cv2.circle(image, (x, y), radius, (0, int(sig), 0), 2)
+                        vortices.append((x, y))
+                else:
+                    if min_radius < radius < max_radius and gray[y,x]<(np.max(gray)-np.min(gray))*color_threshold:  # 过滤不合理的大小
+                        # cv2.circle(image, (x, y), radius, (0, int(sig), 0), 2)
+                        vortices.append((x, y))
+
+    
+    if len(vortices) > 0:
+        # 转换为numpy数组
+        points = np.array(vortices)
+        
+        # 使用DBSCAN聚类，eps是邻域半径，min_samples是最小样本数
+        clustering = DBSCAN(eps=(split*min_radius+(1-split)*2*max_radius), min_samples=more_precise).fit(points)
+        
+        # 计算每个簇的中心点
+        clustered_vortices = []
+        for label in set(clustering.labels_):
+            if label != -1:  # 忽略噪声点
+                cluster_points = points[clustering.labels_ == label]
+                center = np.mean(cluster_points, axis=0).astype(int)
+                clustered_vortices.append(tuple(center))
+        
+        # 用聚类后的中心点替换原始点
+        vortices = clustered_vortices
+        
+        # 在图像上绘制聚类后的中心点
+        for (x, y) in clustered_vortices:
+            cv2.circle(image, (x, y), 2, (0, 255, 0), -1)  # 用红色实心圆标记聚类中心
+
+    
+    # 显示结果
+    cv2.imshow("Detected Vortices", image)
+    return vortices
+    
+if __name__=='__main__':
+    # 使用示例
+    images = glob.glob("./Fieldcold/*.png")
+    detect_vortices_by_convolution(images[0],min_radius=2,max_radius=10,color_threshold=0.5,split=0.5 ,more_precise=1,inverse=True)  # 可调整阈值
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
