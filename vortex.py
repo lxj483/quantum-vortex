@@ -59,7 +59,7 @@ def build_dog_pyramid(gaussian_pyramid,scales_per_octave=5,sigma=1.6):
     return dog_pyramid
 
 
-
+#gittest
 # 在detect_vortices_by_convolution中替换create_vortex_kernel调用为：
 def detect_vortices_by_convolution(image_path, min_radius=20, max_radius=50,color_threshold=0.5,split=0.7,more_precise=7,inverse=False):
     image = cv2.imread(image_path)
