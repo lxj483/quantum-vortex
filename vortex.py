@@ -62,6 +62,21 @@ def build_dog_pyramid(gaussian_pyramid,scales_per_octave=5,sigma=1.6):
 #gittest
 # 在detect_vortices_by_convolution中替换create_vortex_kernel调用为：
 def detect_vortices_by_convolution(image_path, min_radius=20, max_radius=50,color_threshold=0.5,split=0.7,more_precise=7,inverse=False):
+    """
+    使用卷积和聚类方法在图像中检测涡旋。
+
+    参数:
+        image_path (str): 输入图像的路径。
+        min_radius (int, 可选): 检测到的涡旋的最小半径。默认为 20。
+        max_radius (int, 可选): 检测到的涡旋的最大半径。默认为 50。
+        color_threshold (float, 可选): 基于颜色过滤涡旋的阈值。默认为 0.5。
+        split (float, 可选): 计算 DBSCAN 聚类半径的参数。默认为 0.7。
+        more_precise (int, 可选): DBSCAN 聚类所需的最小样本数。默认为 7。
+        inverse (bool, 可选): 是否反转阈值处理。默认为 False。
+
+    返回:
+        list: 一个元组列表，表示检测到的涡旋的坐标。
+    """
     image = cv2.imread(image_path)
     if image is None:
         print("Error: unable to load image.")
@@ -82,7 +97,7 @@ def detect_vortices_by_convolution(image_path, min_radius=20, max_radius=50,colo
     num_octave=int(round(np.log(min(gray.shape)) / np.log(2) - 1))
     gaussian_pyramid = build_gaussian_pyramid(gray, num_octaves=num_octave,scales_per_octave=3,sigma=1.6)
     dog_pyramid = build_dog_pyramid(gaussian_pyramid)
-    
+     
     # 在多尺度上检测涡旋
     vortices = []
     for octave_idx, dog_octave in enumerate(dog_pyramid):
@@ -105,6 +120,7 @@ def detect_vortices_by_convolution(image_path, min_radius=20, max_radius=50,colo
             
             # 寻找连通区域
             contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            print(contours[0])
             for contour in contours:
                 (x, y), radius = cv2.minEnclosingCircle(contour)
                 if radius<1:
