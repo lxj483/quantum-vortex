@@ -84,7 +84,7 @@ def detect_vortices_by_convolution(image_path, min_radius=20, max_radius=50,colo
     if inverse:
         threshold=0.4
     else:
-        threshold=0.62
+        threshold=0.6
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY).astype(np.float32)
     # clahe=cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
     # gray=clahe.apply(gray).astype(np.float32)
@@ -106,7 +106,7 @@ def detect_vortices_by_convolution(image_path, min_radius=20, max_radius=50,colo
             # 归一化并二值化
             norm_dog = cv2.normalize(dog, None, 0,255, cv2.NORM_MINMAX).astype(np.uint8)
             if inverse:
-                _, binary = cv2.threshold(norm_dog,0,255, cv2.THRESH_BINARY_INV+cv2.THRESH_OTSU)
+                _, binary = cv2.threshold(norm_dog,threshold*255,255, cv2.THRESH_BINARY_INV)
             else:
                 _, binary = cv2.threshold(norm_dog,threshold*255,255, cv2.THRESH_BINARY)
             # kernel = np.ones((5,5),np.uint8)
