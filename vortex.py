@@ -7,7 +7,8 @@ import glob
 
 def local_contrast(img, window_size=10):
     """计算局部对比度"""
-    img=img.astype(np.float32)
+    if(len(img.shape)==3):
+        img=cv2.cvtColor(img,cv2.COLOR_BGR2GRAY).astype(np.float32)
     min_img=cv2.erode(img,np.ones((window_size,window_size)))
     max_img=cv2.dilate(img,np.ones((window_size,window_size)))
     img=255*(img-min_img)/(max_img-min_img+1e-5)
@@ -18,7 +19,7 @@ def local_contrast(img, window_size=10):
     return img
 
 
-def build_gaussian_pyramid(image, num_octaves=4, scales_per_octave=5, sigma=1.6):
+def build_gaussian_pyramid(image, num_octaves=4, scales_per_octave=5, sigma=1.6,local_contrast_flag=False):
     """构建高斯金字塔"""
     pyramid = []
     k = 2 ** (1.0 / scales_per_octave)  # 尺度倍增系数
@@ -26,10 +27,13 @@ def build_gaussian_pyramid(image, num_octaves=4, scales_per_octave=5, sigma=1.6)
     for octave in range(num_octaves):
         octave_images = []
         sigma_total = sigma
-        # local_contrast_image=local_contrast(image,window_size=int(sigma_total*6))
+        if local_contrast_flag:
+            local_contrast_image=local_contrast(image,window_size=int(sigma_total*5))
+        else:
+            local_contrast_image=image
         for s in range(scales_per_octave + 3):  # 每octave多生成3幅用于极值检测
             if  s == 0:
-                octave_images.append(image.astype(np.float32))
+                octave_images.append(local_contrast_image.astype(np.float32))
             else:
                 sigma_effective = sigma_total * np.sqrt(k**2 - 1)
                 blurred = cv2.GaussianBlur(octave_images[-1], (0, 0), sigmaX=sigma_effective)
@@ -61,7 +65,7 @@ def build_dog_pyramid(gaussian_pyramid,scales_per_octave=5,sigma=1.6):
 
 #gittest
 # 在detect_vortices_by_convolution中替换create_vortex_kernel调用为：
-def detect_vortices_by_convolution(image_path, min_radius=20, max_radius=50,color_threshold=0.5,split=0.7,more_precise=7,inverse=False):
+def detect_vortices_by_convolution(image_path, min_radius=20, max_radius=50,color_threshold=0.5,split=0.7,more_precise=7,erosion=None,inverse=False,local_contrast_flag=False):
     """
     使用卷积和聚类方法在图像中检测涡旋。
 
@@ -81,11 +85,10 @@ def detect_vortices_by_convolution(image_path, min_radius=20, max_radius=50,colo
     if image is None:
         print("Error: unable to load image.")
         return
-    if inverse:
-        threshold=0.4
+    if len(image.shape)==3:
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY).astype(np.float32)
     else:
-        threshold=0.6
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY).astype(np.float32)
+        gray=image.astype(np.float32)
     # clahe=cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
     # gray=clahe.apply(gray).astype(np.float32)
     # gray=local_contrast(gray,window_size=15)
@@ -95,7 +98,10 @@ def detect_vortices_by_convolution(image_path, min_radius=20, max_radius=50,colo
     
     # 构建金字塔
     num_octave=int(round(np.log(min(gray.shape)) / np.log(2) - 1))
-    gaussian_pyramid = build_gaussian_pyramid(gray, num_octaves=num_octave,scales_per_octave=3,sigma=1.6)
+    if local_contrast_flag:
+        gaussian_pyramid = build_gaussian_pyramid(gray, num_octaves=num_octave,scales_per_octave=3,sigma=1.6,local_contrast_flag=True)
+    else:
+        gaussian_pyramid = build_gaussian_pyramid(gray, num_octaves=num_octave,scales_per_octave=3,sigma=1.6,local_contrast_flag=False)
     dog_pyramid = build_dog_pyramid(gaussian_pyramid)
      
     # 在多尺度上检测涡旋
@@ -106,27 +112,23 @@ def detect_vortices_by_convolution(image_path, min_radius=20, max_radius=50,colo
             # 归一化并二值化
             norm_dog = cv2.normalize(dog, None, 0,255, cv2.NORM_MINMAX).astype(np.uint8)
             if inverse:
-                _, binary = cv2.threshold(norm_dog,threshold*255,255, cv2.THRESH_BINARY_INV)
+                threshold, binary = cv2.threshold(norm_dog,0,255, cv2.THRESH_BINARY_INV+cv2.THRESH_OTSU)
             else:
-                _, binary = cv2.threshold(norm_dog,threshold*255,255, cv2.THRESH_BINARY)
-            # kernel = np.ones((5,5),np.uint8)
-            # opening = cv2.morphologyEx(binary,cv2.MORPH_OPEN,kernel, iterations = 2)
-            # dist_transform = cv2.distanceTransform(binary,cv2.DIST_L2,5)
-            # ret, binary = cv2.threshold(dist_transform,0.3*dist_transform.max(),255,0)
-            # cv2.imshow("dog",binary)
-            # cv2.waitKey(0) 
-            # cv2.destroyAllWindows()
+                threshold, binary = cv2.threshold(norm_dog,0,255, cv2.THRESH_BINARY+cv2.THRESH_OTSU)
+            dist_transform = cv2.distanceTransform(binary,cv2.DIST_L2,5)
+            if erosion is None:
+                erosion=min_radius 
+            ret, binary = cv2.threshold(dist_transform,erosion/scale,255,0)
             binary = binary.astype(np.uint8)
             
             # 寻找连通区域
             contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-            print(contours[0])
             for contour in contours:
                 (x, y), radius = cv2.minEnclosingCircle(contour)
                 if radius<1:
                     continue
-                region=norm_dog[int(max(x-radius,0)):int(min(x+radius,norm_dog.shape[1])), int(max(y-radius,0)):int(min(y+radius,norm_dog.shape[0]))]
-                sig = np.max(region)
+                # region=norm_dog[int(max(x-radius,0)):int(min(x+radius,norm_dog.shape[1])), int(max(y-radius,0)):int(min(y+radius,norm_dog.shape[0]))]
+                # sig = np.max(region)
                 x, y, radius = int(x*scale), int(y*scale), int(radius*scale)
                 if inverse:
                     if min_radius < radius < max_radius and gray[y,x]>(np.max(gray)-np.min(gray))*(1-color_threshold):  # 过滤不合理的大小
@@ -168,6 +170,6 @@ def detect_vortices_by_convolution(image_path, min_radius=20, max_radius=50,colo
 if __name__=='__main__':
     # 使用示例
     images = glob.glob("./Fieldcold/*.png")
-    detect_vortices_by_convolution(images[0],min_radius=2,max_radius=10,color_threshold=0.5,split=0.5 ,more_precise=1,inverse=True)  # 可调整阈值
+    detect_vortices_by_convolution(images[1],min_radius=2,max_radius=7,color_threshold=0.5,split=0.6 ,more_precise=1,erosion=1,inverse=True)  # 可调整阈值
     cv2.waitKey(0)
     cv2.destroyAllWindows()
