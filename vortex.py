@@ -65,7 +65,7 @@ def build_dog_pyramid(gaussian_pyramid,scales_per_octave=5,sigma=1.6):
 
 #gittest
 # 在detect_vortices_by_convolution中替换create_vortex_kernel调用为：
-def detect_vortices_by_convolution(image_path, min_radius=20, max_radius=50,color_threshold=0.5,split=0.7,more_precise=7,erosion=None,inverse=False,local_contrast_flag=False):
+def detect_vortices_by_convolution(image_path, min_radius=2, max_radius=7,color_threshold=0.5,split=0.7,more_precise=3,erosion=0,inverse=False,local_contrast=False,watershad=False):
     """
     使用卷积和聚类方法在图像中检测涡旋。
 
@@ -89,6 +89,8 @@ def detect_vortices_by_convolution(image_path, min_radius=20, max_radius=50,colo
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY).astype(np.float32)
     else:
         gray=image.astype(np.float32)
+    if inverse:
+        gray=255-gray
     # clahe=cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
     # gray=clahe.apply(gray).astype(np.float32)
     # gray=local_contrast(gray,window_size=15)
@@ -98,47 +100,60 @@ def detect_vortices_by_convolution(image_path, min_radius=20, max_radius=50,colo
     
     # 构建金字塔
     num_octave=int(round(np.log(min(gray.shape)) / np.log(2) - 1))
-    if local_contrast_flag:
-        gaussian_pyramid = build_gaussian_pyramid(gray, num_octaves=num_octave,scales_per_octave=3,sigma=1.6,local_contrast_flag=True)
+    scales_per_octave=3
+    sigma=1.6
+    if local_contrast:
+        gaussian_pyramid = build_gaussian_pyramid(gray, num_octaves=num_octave,scales_per_octave=scales_per_octave,sigma=sigma,local_contrast_flag=True)
     else:
-        gaussian_pyramid = build_gaussian_pyramid(gray, num_octaves=num_octave,scales_per_octave=3,sigma=1.6,local_contrast_flag=False)
+        gaussian_pyramid = build_gaussian_pyramid(gray, num_octaves=num_octave,scales_per_octave=scales_per_octave,sigma=sigma,local_contrast_flag=False)
     dog_pyramid = build_dog_pyramid(gaussian_pyramid)
-     
+
+    flag=0
+
     # 在多尺度上检测涡旋
     vortices = []
     for octave_idx, dog_octave in enumerate(dog_pyramid):
         scale = 2 ** octave_idx  # 当前octave的尺度因子
         for layer_idx, dog in enumerate(dog_octave):
+            max_scale_radius=5*sigma*(2**(layer_idx/scales_per_octave))
             # 归一化并二值化
             norm_dog = cv2.normalize(dog, None, 0,255, cv2.NORM_MINMAX).astype(np.uint8)
-            if inverse:
-                threshold, binary = cv2.threshold(norm_dog,0,255, cv2.THRESH_BINARY_INV+cv2.THRESH_OTSU)
-            else:
-                threshold, binary = cv2.threshold(norm_dog,0,255, cv2.THRESH_BINARY+cv2.THRESH_OTSU)
+            threshold, binary = cv2.threshold(norm_dog,0,255, cv2.THRESH_BINARY+cv2.THRESH_OTSU)
             dist_transform = cv2.distanceTransform(binary,cv2.DIST_L2,5)
-            if erosion is None:
-                erosion=min_radius 
             ret, binary = cv2.threshold(dist_transform,erosion/scale,255,0)
             binary = binary.astype(np.uint8)
             
             # 寻找连通区域
             contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            contours=list(contours)
+            print(f'b{len(contours)}')
             for contour in contours:
                 (x, y), radius = cv2.minEnclosingCircle(contour)
-                if radius<1:
+                if radius<1 or radius<min_radius/scale:
                     continue
+                #分水岭算法分割涡旋簇
+                elif watershad and radius>max_scale_radius and radius>max_radius/scale:
+                    mask=np.zeros_like(norm_dog)
+                    cv2.drawContours(mask,[contour],-1,255,-1)
+                    mask[mask==255]=norm_dog[mask==255 ]
+                    thresholds=np.linspace(threshold,255,30)
+                    for thresh in thresholds[:10]:
+                        _,binary2=cv2.threshold(mask,thresh,255,cv2.THRESH_BINARY)
+                        new_contours, _ = cv2.findContours(binary2, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                        if len(new_contours)>1:
+                            contours.extend(list(new_contours))
+                            contour=[]
+                            break
+                    continue
+
                 # region=norm_dog[int(max(x-radius,0)):int(min(x+radius,norm_dog.shape[1])), int(max(y-radius,0)):int(min(y+radius,norm_dog.shape[0]))]
                 # sig = np.max(region)
                 x, y, radius = int(x*scale), int(y*scale), int(radius*scale)
-                if inverse:
-                    if min_radius < radius < max_radius and gray[y,x]>(np.max(gray)-np.min(gray))*(1-color_threshold):  # 过滤不合理的大小
-                        # cv2.circle(image, (x, y), radius, (0, int(sig), 0), 2)
-                        vortices.append((x, y))
-                else:
-                    if min_radius < radius < max_radius and gray[y,x]<(np.max(gray)-np.min(gray))*color_threshold:  # 过滤不合理的大小
-                        # cv2.circle(image, (x, y), radius, (0, int(sig), 0), 2)
-                        vortices.append((x, y))
+                if min_radius < radius < max_radius and gray[y,x]<(np.max(gray)-np.min(gray))*color_threshold:  # 过滤不合理的大小
+                    # cv2.circle(image, (x, y), radius, (0, int(sig), 0), 2)
+                    vortices.append((x, y))
 
+            print(f'a{len(contours)}')        
     
     if len(vortices) > 0:
         # 转换为numpy数组
@@ -170,6 +185,6 @@ def detect_vortices_by_convolution(image_path, min_radius=20, max_radius=50,colo
 if __name__=='__main__':
     # 使用示例
     images = glob.glob("./Fieldcold/*.png")
-    detect_vortices_by_convolution(images[1],min_radius=2,max_radius=7,color_threshold=0.5,split=0.6 ,more_precise=1,erosion=1,inverse=True)  # 可调整阈值
+    detect_vortices_by_convolution(images[1],min_radius=2,max_radius=8,color_threshold=0.5,split=0.6 ,more_precise=1,erosion=2,inverse=True)  # 可调整阈值
     cv2.waitKey(0)
     cv2.destroyAllWindows()
