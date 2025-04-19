@@ -108,7 +108,6 @@ def detect_vortices_by_convolution(image_path, min_radius=2, max_radius=7,color_
         gaussian_pyramid = build_gaussian_pyramid(gray, num_octaves=num_octave,scales_per_octave=scales_per_octave,sigma=sigma,local_contrast_flag=False)
     dog_pyramid = build_dog_pyramid(gaussian_pyramid)
 
-    flag=0
 
     # 在多尺度上检测涡旋
     vortices = []
@@ -126,7 +125,6 @@ def detect_vortices_by_convolution(image_path, min_radius=2, max_radius=7,color_
             # 寻找连通区域
             contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
             contours=list(contours)
-            print(f'b{len(contours)}')
             for contour in contours:
                 (x, y), radius = cv2.minEnclosingCircle(contour)
                 if radius<1 or radius<min_radius/scale:
@@ -153,7 +151,6 @@ def detect_vortices_by_convolution(image_path, min_radius=2, max_radius=7,color_
                     # cv2.circle(image, (x, y), radius, (0, int(sig), 0), 2)
                     vortices.append((x, y))
 
-            print(f'a{len(contours)}')        
     
     if len(vortices) > 0:
         # 转换为numpy数组
