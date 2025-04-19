@@ -94,9 +94,9 @@ def detect_vortices_by_convolution(image_path, min_radius=2, max_radius=7,color_
     # clahe=cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
     # gray=clahe.apply(gray).astype(np.float32)
     # gray=local_contrast(gray,window_size=15)
-    cv2.imshow('img',gray.astype(np.uint8))
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()
+    # cv2.imshow('img',gray.astype(np.uint8))
+    # cv2.waitKey(0)
+    # cv2.destroyAllWindows()
     
     # 构建金字塔
     num_octave=int(round(np.log(min(gray.shape)) / np.log(2) - 1))
@@ -114,7 +114,7 @@ def detect_vortices_by_convolution(image_path, min_radius=2, max_radius=7,color_
     for octave_idx, dog_octave in enumerate(dog_pyramid):
         scale = 2 ** octave_idx  # 当前octave的尺度因子
         for layer_idx, dog in enumerate(dog_octave):
-            max_scale_radius=5*sigma*(2**(layer_idx/scales_per_octave))
+            max_scale_radius=4*sigma*(2**((layer_idx+1)/scales_per_octave))
             # 归一化并二值化
             norm_dog = cv2.normalize(dog, None, 0,255, cv2.NORM_MINMAX).astype(np.uint8)
             threshold, binary = cv2.threshold(norm_dog,0,255, cv2.THRESH_BINARY+cv2.THRESH_OTSU)
@@ -134,7 +134,7 @@ def detect_vortices_by_convolution(image_path, min_radius=2, max_radius=7,color_
                     mask=np.zeros_like(norm_dog)
                     cv2.drawContours(mask,[contour],-1,255,-1)
                     mask[mask==255]=norm_dog[mask==255 ]
-                    thresholds=np.linspace(threshold,255,30)
+                    thresholds=np.linspace(threshold,255,40)
                     for thresh in thresholds[:10]:
                         _,binary2=cv2.threshold(mask,thresh,255,cv2.THRESH_BINARY)
                         new_contours, _ = cv2.findContours(binary2, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -182,6 +182,6 @@ def detect_vortices_by_convolution(image_path, min_radius=2, max_radius=7,color_
 if __name__=='__main__':
     # 使用示例
     images = glob.glob("./Fieldcold/*.png")
-    detect_vortices_by_convolution(images[1],min_radius=2,max_radius=8,color_threshold=0.5,split=0.6 ,more_precise=1,erosion=2,inverse=True)  # 可调整阈值
+    detect_vortices_by_convolution(images[1],min_radius=2,max_radius=8,color_threshold=0.5,split=0.6 ,more_precise=1,erosion=0,inverse=True,watershad=True)  # 可调整阈值
     cv2.waitKey(0)
     cv2.destroyAllWindows()
