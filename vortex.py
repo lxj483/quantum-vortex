@@ -176,7 +176,7 @@ def detect_vortices_by_convolution(image_path, min_radius=2, max_radius=7,color_
 
     
     # 显示结果
-    cv2.imshow("Detected Vortices", image)
+    # cv2.imshow("Detected Vortices", image)
     return vortices
     
 if __name__=='__main__':

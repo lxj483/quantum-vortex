@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>涡旋识别系统</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .upload-section {
+            margin-bottom: 20px;
+            padding: 20px;
+            border: 1px dashed #ccc;
+            text-align: center;
+        }
+        #result-section {
+            display: none;
+            margin-top: 20px;
+        }
+        #original-image, #processed-image {
+            max-width: 100%;
+            margin-top: 10px;
+        }
+        button {
+            padding: 10px 15px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+    </style>
+</head>
+<body>
+    <h1>涡旋识别系统</h1>
+    
+    <div class="upload-section">
+        <h2>上传图片</h2>
+        <input type="file" id="image-upload" accept="image/*" enctype="multipart/form-data">
+        
+        <h3>参数设置</h3>
+        <div class="params-section">
+            <div>
+                <label>最小半径:</label>
+                <input type="number" id="min_radius" value="3" min="1" step="1">
+            </div>
+            <div>
+                <label>最大半径:</label>
+                <input type="number" id="max_radius" value="7" min="2" step="1">
+            </div>
+            <div>
+                <label>颜色阈值:</label>
+                <input type="number" id="color_threshold" value="0.5" min="0" max="1" step="0.1">
+            </div>
+            <div>
+                <label>分割阈值:</label>
+                <input type="number" id="split" value="0.7" min="0" max="1" step="0.1">
+            </div>
+            <div>
+                <label>精确度:</label>
+                <input type="number" id="more_precise" value="3" min="1" max="5" step="1">
+            </div>
+            <div>
+                <label>侵蚀:</label>
+                <input type="number" id="erosion" value="0" min="0" max="50" step="1">
+            </div>
+            <div>
+                <label>反转:</label>
+                <input type="checkbox" id="inverse">
+            </div>
+            <div>
+                <label>局部对比度:</label>
+                <input type="checkbox" id="local_contrast">
+            </div>
+            <div>
+                <label>分水岭:</label>
+                <input type="checkbox" id="watershad">
+            </div>
+        </div>
+        
+        <button id="upload-btn">识别涡旋</button>
+    </div>
+    
+    <div id="result-section">
+        <h2>识别结果</h2>
+        <div>
+            <h3>原始图片</h3>
+            <img id="original-image" src="" alt="原始图片">
+        </div>
+        <div>
+            <h3>处理结果</h3>
+            <img id="processed-image" src="" alt="处理结果">
+        </div>
+        <div id="result-text"></div>
+    </div>
+    
+    <script>
+        document.getElementById('upload-btn').addEventListener('click', async function() {
+            const fileInput = document.getElementById('image-upload');
+            const file = fileInput.files[0];
+            
+            if (!file) {
+                alert('请先选择图片文件');
+                return;
+            }
+            
+            try {
+                const formData = new FormData();
+
+                // 确保数值参数转换为正确类型
+                formData.append('min_radius', parseInt(document.getElementById('min_radius').value));
+                formData.append('max_radius', parseInt(document.getElementById('max_radius').value));
+                formData.append('color_threshold', parseFloat(document.getElementById('color_threshold').value));
+                formData.append('split', parseFloat(document.getElementById('split').value));
+                formData.append('more_precise', parseInt(document.getElementById('more_precise').value));
+                formData.append('erosion', parseInt(document.getElementById('erosion').value));
+
+                // 布尔值保持不变
+                formData.append('inverse', document.getElementById('inverse').checked);
+                formData.append('local_contrast', document.getElementById('local_contrast').checked);
+                formData.append('watershad', document.getElementById('watershad').checked);
+                formData.append('file', file);  // 原为 'image'
+                
+                // 显示上传状态
+                const uploadBtn = document.getElementById('upload-btn');
+                uploadBtn.disabled = true;
+                uploadBtn.textContent = '处理中...';
+                
+                // 调用API接口
+                const response = await fetch('/detect_vortices', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`请求失败: ${response.status}`);
+                }
+                
+                const result = await response.json();
+                
+                // 显示结果
+                document.getElementById('result-section').style.display = 'block';
+                document.getElementById('original-image').src = URL.createObjectURL(file);
+                document.getElementById('processed-image').src = 'data:image/jpeg;base64,' + result.processed_image;
+                document.getElementById('result-text').innerHTML = `识别到 ${result.vortex_count} 个涡旋`;
+                return;
+                
+            } catch (error) {
+                alert('处理失败: ' + error.message);
+                console.error(error);
+            } finally {
+                const uploadBtn = document.getElementById('upload-btn');
+                uploadBtn.disabled = false;
+                uploadBtn.textContent = '识别涡旋';
+            }
+        });
+    </script>
+</body>
+</html>
