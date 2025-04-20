@@ -33,7 +33,6 @@ async def detect_vortices(
     watershad: bool = Form(False)
 ):
     try:
-        print(f"接收到的参数 - min_radius: {min_radius}")  # 添加调试输出
         # 保存上传的临时文件
         with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as temp:
             temp.write(await file.read())
