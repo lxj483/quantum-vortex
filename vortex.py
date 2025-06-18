@@ -52,7 +52,7 @@ def detect_vortices_by_convolution(image_path, min_radius=2, inverse=False, thre
 
 
     # 在多尺度上检测涡旋
-    neighborhood_max=maximum_filter(dog_octave,size=5)
+    neighborhood_max=maximum_filter(dog_octave,size=(2*scales_per_octave+1,5,5))
     local_max=((dog_octave==neighborhood_max)&(dog_octave>threshold))
     y_coords,x_coords=np.array(np.where(local_max)[1:])*min_radius
     for vortice in zip(x_coords,y_coords):
