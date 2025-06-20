@@ -12,7 +12,7 @@ class Vortex:
         self.size=np.array(size)
         self.image_path=image_path
 
-        self.lambda_ = lambda_   # Penetration depth in meters (1000 Å)
+        self.lambda_ = lambda_   # Penetration depth um
         self.vortex_positions=None
         self.pinning_forces=None
         self.pixel_size=np.array([1,1])
@@ -79,7 +79,7 @@ class Vortex:
 
         # Load vortex positions data (in microns)
         # Define constants
-        phi_0 = 2.07e-3  # Flux quantum in Wb (weber)
+        phi_0 = 2.07e-3  # Flux quantum in Wb*1e12 (weber)
         mu_0 = 4 * np.pi * 1e-7  # Vacuum permeability
 
         # Initialize arrays
