@@ -88,7 +88,7 @@ class Vortex:
                 if len(current_vortices) > 0:
                     distances = np.linalg.norm(current_vortices - [event.xdata, event.ydata], axis=1)
                     min_idx = np.argmin(distances)                        # 如果距离足够近则删除，否则添加
-                    if distances[min_idx] < 2:  # 5像素阈值
+                    if distances[min_idx] < np.min((2*min_radius,10)):  # 5像素阈值
                         current_vortices = np.delete(current_vortices, min_idx, axis=0)
                     else:
                         current_vortices = np.vstack([current_vortices, 
