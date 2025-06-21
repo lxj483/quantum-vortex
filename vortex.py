@@ -66,13 +66,44 @@ class Vortex:
         vortices=np.array(list(zip(x_coords,y_coords)))
         self.vortex_positions=vortices
         if show:
-            for vortice in vortices:
-                cv2.circle(image, vortice, 2, (0, 255, 0), -1)  # 用红色实心圆标记聚类中心
-            cv2.circle(image,(50,20),2,(0,0,255),-1)
-            cv2.imshow('img2',image)
-            cv2.waitKey(0)
-            cv2.destroyAllWindows()
-        return vortices
+            if len(image.shape) == 3:
+                image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            else:
+                image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
+                
+            fig, ax = plt.subplots(figsize=(10, 8))
+            ax.imshow(image)
+            scatter = ax.scatter(vortices[:, 0], vortices[:, 1], 
+                               c='red', marker='o', s=20, 
+                               edgecolors='white', linewidths=0.5)
+            ax.set_title('Detected Vortices (Click to add/remove)')
+            ax.axis('off')
+            plt.tight_layout()
+            def onclick(event):
+                if event.inaxes != ax:
+                    return                
+                # 获取当前涡旋点
+                current_vortices = self.vortex_positions.copy()                    
+                # 查找最近的涡旋点
+                if len(current_vortices) > 0:
+                    distances = np.linalg.norm(current_vortices - [event.xdata, event.ydata], axis=1)
+                    min_idx = np.argmin(distances)                        # 如果距离足够近则删除，否则添加
+                    if distances[min_idx] < 2:  # 5像素阈值
+                        current_vortices = np.delete(current_vortices, min_idx, axis=0)
+                    else:
+                        current_vortices = np.vstack([current_vortices, 
+                                                     [event.xdata, event.ydata]])
+                else:                        
+                    current_vortices = np.array([[event.xdata, event.ydata]])
+                    
+                    # 更新显示和类属性
+                scatter.set_offsets(current_vortices)
+                self.vortex_positions = current_vortices.astype(np.int16)
+                fig.canvas.draw()
+
+            fig.canvas.mpl_connect('button_press_event', onclick)
+            plt.show()
+        return self.vortex_positions*self.pixel_size
         
     def calc_pinning_force(self):
         vortex_positions=self.vortex_positions*self.pixel_size
@@ -125,12 +156,80 @@ class Vortex:
                 plt.text(x, y, str(i+1), ha='center', va='center', color='black',fontsize=6)
         plt.tight_layout()
         plt.show()
+
+    def analyze_vortex_neighbors(self):
+        """分析涡旋点的邻居关系，计算配位数和最近邻距离"""
+        # 获取去重后的涡旋位置
+        points = self.vortex_positions
         
+        # 计算Delaunay三角剖分
+        from scipy.spatial import Delaunay
+        tri = Delaunay(points)
+        
+        # 初始化配位数数组和最近邻距离数组
+        coordination_number = np.zeros(len(points))
+        vnv=tri.vertex_neighbor_vertices
+        # 计算每个点的配位数和最近邻距离
+        for i in range(len(points)):
+            # 获取相邻三角形索引
+            neighbors = vnv[1][vnv[0][i]:vnv[0][i+1]]
+            coordination_number[i] = len(neighbors)
+        
+        # 定义边缘距离阈值
+        edge_threshold = 0.5
+        x_min, y_min = np.min(points, axis=0)
+        x_max, y_max = np.max(points, axis=0)
+        
+        # 确定边缘点
+        is_edge_point = ((points[:, 0] - x_min) < edge_threshold) | \
+                       ((x_max - points[:, 0]) < edge_threshold) | \
+                       ((points[:, 1] - y_min) < edge_threshold) | \
+                       ((y_max - points[:, 1]) < edge_threshold)
+        
+        # 根据配位数和是否为边缘点分类
+        neighbor_points = {
+            4: points[(coordination_number == 4) & ~is_edge_point],
+            5: points[(coordination_number == 5) & ~is_edge_point],
+            6: points[(coordination_number == 6) & ~is_edge_point],
+            7: points[(coordination_number == 7) & ~is_edge_point],
+            8: points[(coordination_number == 8) & ~is_edge_point]
+        }
+        
+        # 绘图
+        plt.figure()
+        plt.triplot(points[:, 0], points[:, 1], tri.simplices, color='#0072BD', linewidth=1)
+        
+        markers = {
+            4: ('s', 'k'),  # 正方形, 黑色
+            5: ('p', 'r'),  # 五角星, 红色
+            6: ('h', 'g'),  # 六角形, 绿色
+            7: ('v', 'b'),  # 倒三角, 蓝色
+            8: ('^', 'm')   # 正三角, 洋红
+        }
+        
+        for num, (marker, color) in markers.items():
+            if len(neighbor_points[num]) > 0:
+                plt.scatter(neighbor_points[num][:, 0], neighbor_points[num][:, 1],
+                          marker=marker, color=color, s=100)
+        
+        plt.axis('equal')
+        plt.axis('off')
+        plt.show()
+        
+        return {
+            'coordination_numbers': coordination_number,
+            'neighbor_points': neighbor_points
+        } 
+
 if __name__=='__main__':
     # 使用示例
-    images = glob.glob("./Fieldcold/*.png")
-    vor=Vortex.detect_vortices(images[0],1,threshold=150,inverse=True)
-    # 可调整阈值
-    np.savetxt('vor.dat',vor,fmt='%d')
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()
+    import glob
+    from vortex import Vortex
+
+
+    images = glob.glob("./Fieldcold/*.jpg")
+    vortex=Vortex(images[1],(20,20),lambda_=2)
+    vortex.detect_vortices(1,threshold=130,inverse=False,show=False)
+    vortex.calc_pinning_force()
+    vortex.analyze_vortex_neighbors()
+    # vortex.draw_pinning_force(text=True)
