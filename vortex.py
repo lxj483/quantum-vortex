@@ -5,8 +5,11 @@ import glob
 import matplotlib.pyplot as plt
 from scipy.special import kn
 from scipy.spatial.distance import pdist, squareform
-import matplotlib
-matplotlib.use('TkAgg')
+import seaborn as sns
+
+# import matplotlib
+# matplotlib.use('TkAgg')
+
 class Vortex:
     def __init__(self,image_path, size, lambda_=1):
         self.size=np.array(size)
@@ -16,7 +19,42 @@ class Vortex:
         self.vortex_positions=None
         self.pinning_forces=None
         self.pixel_size=np.array([1,1])
+        self.neighbor=None
+        self.coordinate_number=None
+        self._nearest_distance=None
+    
+    @property
+    def nearest_distance(self):
+        return self.cal_nearest_distance(show=False)
 
+    def cal_nearest_distance(self,show=True):
+        if self.vortex_positions is None or len(self.vortex_positions) < 2:
+            print("Not enough vortex positions to calculate nearest distances.")
+            return
+        # 计算每个涡旋点到其最近邻点的距离
+        nearest_distance = squareform(pdist(self.vortex_positions * self.pixel_size))
+        nearest_distance[np.diag_indices(nearest_distance.shape[0])] = np.inf
+        nearest_distance = nearest_distance.min(axis=0)
+        if show:
+            plt.figure(figsize=(6, 6))
+            # 使用 seaborn 绘制直方图
+            sns.histplot(
+                nearest_distance,
+                bins=30,
+                color='gray',  # 设置柱状图颜色为灰色
+                edgecolor=None,  # 去掉柱边框
+                alpha=0.7,
+                element="bars",
+                shrink=0.8  # 调窄柱子并留空隙
+            )
+            plt.title('Nearest Neighbor Distance Distribution')
+            plt.xlabel('Nearest Neighbor Distance')
+            plt.ylabel('Frequency')
+            plt.grid(axis='y', linestyle='--', alpha=0.7)
+            plt.tight_layout()
+            plt.show()
+        self._nearest_distance=nearest_distance
+        return nearest_distance
 
     def build_dog_pyramid(self,min_radius,scales_per_octave=5,sigma=1,inverse=False):
         #构建高斯金字塔
@@ -105,7 +143,8 @@ class Vortex:
             plt.show()
         return self.vortex_positions*self.pixel_size
         
-    def calc_pinning_force(self):
+    def calc_pinning_force(self,lambda_=1):
+        self.lambda_=lambda_
         vortex_positions=self.vortex_positions*self.pixel_size
 
         # Load vortex positions data (in microns)
@@ -134,9 +173,9 @@ class Vortex:
         self.pinning_forces = np.sum(force_contributions, axis=1)
         return pinning_forces
 
-    def draw_pinning_force(self,text=False):
+    def draw_pinning_force(self):
         # Visualization
-        plt.figure(figsize=(8, 6))
+        plt.figure(figsize=(10,8))
         pinning_force_magnitudes=np.linalg.norm(self.pinning_forces,axis=1)
         scatter = plt.scatter(self.vortex_positions[:, 0]*self.pixel_size[0] , 
                             self.vortex_positions[:, 1]*self.pixel_size[1] , 
@@ -151,9 +190,6 @@ class Vortex:
         ax.xaxis.set_ticks_position('top')  # x轴移到顶部
         ax.yaxis.set_ticks_position('left')  # y轴保持在左侧
         # Optional: Add vortex numbers as text label
-        if text:
-            for i, (x, y) in enumerate(self.vortex_positions*self.pixel_size):
-                plt.text(x, y, str(i+1), ha='center', va='center', color='black',fontsize=6)
         plt.tight_layout()
         plt.show()
 
@@ -196,7 +232,7 @@ class Vortex:
         }
         
         # 绘图
-        plt.figure()
+        plt.figure(figsize=(10,8))
         plt.triplot(points[:, 0], points[:, 1], tri.simplices, color='#0072BD', linewidth=1)
         
         markers = {
@@ -210,16 +246,16 @@ class Vortex:
         for num, (marker, color) in markers.items():
             if len(neighbor_points[num]) > 0:
                 plt.scatter(neighbor_points[num][:, 0], neighbor_points[num][:, 1],
-                          marker=marker, color=color, s=100)
+                          marker=marker, color=color, s=50)
         
+        plt.gca().set_aspect('equal')
         plt.axis('equal')
         plt.axis('off')
         plt.show()
         
-        return {
-            'coordination_numbers': coordination_number,
-            'neighbor_points': neighbor_points
-        } 
+        self.coordination_number=coordination_number
+        self.neighbor=neighbor_points
+        return
 
 if __name__=='__main__':
     # 使用示例
