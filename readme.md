@@ -1,7 +1,7 @@
 # Quantum Vortex Project
 
 ## Description
-A computer vision project for detecting quantum vortices in images using various algorithms including convolution-based methods.
+A computer vision project for identify real-space distribution of quantum vortices in images using DOG convolution.
 
 ## Features
 - Vortex detection via convolution algorithms
