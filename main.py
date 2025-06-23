@@ -1,7 +1,7 @@
 import glob
 from vortex import Vortex
 import numpy as np
-import cv2
+
 extensions=['jpg','png']
 images=[]
 for ext in extensions:
